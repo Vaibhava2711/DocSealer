@@ -1,0 +1,70 @@
+name: Build DocSealer
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install pyinstaller PyQt6 Pillow img2pdf pypdf reportlab pdf2image pillow-heif
+
+      - name: Install Poppler
+        shell: pwsh
+        run: |
+          curl -L -o poppler.zip "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.02.0-0/Release-24.02.0-0.zip"
+          Expand-Archive -Path poppler.zip -DestinationPath C:\poppler
+
+      - name: Build Windows EXE
+        shell: pwsh
+        run: |
+          $popplerBin = "C:\poppler\poppler-24.02.0\Library\bin"
+          pyinstaller --noconfirm --onedir --windowed --name "DocSealer" --add-data "$popplerBin;poppler/bin" --hidden-import "PIL._tkinter_finder" --hidden-import "pillow_heif" --hidden-import "pypdf" --hidden-import "reportlab" --hidden-import "img2pdf" --hidden-import "pdf2image" --collect-all "PyQt6" --collect-all "reportlab" --collect-all "pillow_heif" doc_sealer_app.py
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: DocSealer-Windows
+          path: dist/DocSealer/
+          retention-days: 30
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install pyinstaller PyQt6 Pillow img2pdf pypdf reportlab pdf2image pillow-heif
+
+      - name: Install Poppler
+        run: brew install poppler
+
+      - name: Build Mac APP
+        run: |
+          POPPLER_BIN=$(dirname $(which pdftoppm))
+          pyinstaller --noconfirm --onedir --windowed --name "DocSealer" --add-binary "$POPPLER_BIN/pdftoppm:poppler/bin" --add-binary "$POPPLER_BIN/pdfinfo:poppler/bin" --hidden-import "PIL._tkinter_finder" --hidden-import "pillow_heif" --hidden-import "pypdf" --hidden-import "reportlab" --hidden-import "img2pdf" --hidden-import "pdf2image" --collect-all "PyQt6" --collect-all "reportlab" --collect-all "pillow_heif" doc_sealer_app.py
+
+      - name: Upload Mac APP
+        uses: actions/upload-artifact@v4
+        with:
+          name: DocSealer-Mac
+          path: dist/DocSealer/
+          retention-days: 30
