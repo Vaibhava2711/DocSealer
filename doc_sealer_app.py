@@ -325,11 +325,28 @@ class Worker(QThread):
         tmp_seal = io.BytesIO()
         rgba = seal_img.convert("RGBA")
 
-        # Crop out transparent/white border around seal image
+        # Auto-crop seal image — removes black, white, or transparent borders
         from PIL import ImageEnhance
-        bbox = rgba.getbbox()  # get bounding box of non-transparent pixels
-        if bbox:
-            rgba = rgba.crop(bbox)
+        import numpy as _np
+        _arr = _np.array(rgba)
+        _rgb = _arr[:,:,:3].astype(int)
+        # Detect background: sample corner pixels to find bg color
+        _corners = [_rgb[0,0], _rgb[0,-1], _rgb[-1,0], _rgb[-1,-1]]
+        _bg = _np.mean(_corners, axis=0)  # average corner color = background
+        # Find pixels that differ from background by more than threshold
+        _diff = _np.abs(_rgb - _bg).sum(axis=2)
+        _mask = _diff > 20
+        _rows = _np.any(_mask, axis=1)
+        _cols = _np.any(_mask, axis=0)
+        if _rows.any() and _cols.any():
+            _rmin, _rmax = _np.where(_rows)[0][[0, -1]]
+            _cmin, _cmax = _np.where(_cols)[0][[0, -1]]
+            _pad = 4
+            _rmin = max(0, _rmin - _pad)
+            _rmax = min(rgba.height - 1, _rmax + _pad)
+            _cmin = max(0, _cmin - _pad)
+            _cmax = min(rgba.width - 1, _cmax + _pad)
+            rgba = rgba.crop((_cmin, _rmin, _cmax + 1, _rmax + 1))
 
         # Apply opacity to alpha channel
         r, g, b, a = rgba.split()
