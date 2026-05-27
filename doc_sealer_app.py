@@ -316,7 +316,7 @@ class Worker(QThread):
         c = rl_canvas.Canvas(buf, pagesize=(w_pt, h_pt))
 
         # Seal size: ~12% of shortest page dimension, capped 60-120pt
-        seal_sz = max(60, min(120, int(min(w_pt, h_pt) * 0.20)))
+        seal_sz = max(100, min(220, int(min(w_pt, h_pt) * 0.35)))
         mgn     = SEAL_MARGIN_PT
         x       = w_pt  - mgn - seal_sz
         y       = mgn
@@ -325,9 +325,14 @@ class Worker(QThread):
         tmp_seal = io.BytesIO()
         rgba = seal_img.convert("RGBA")
 
+        # Crop out transparent/white border around seal image
+        from PIL import ImageEnhance
+        bbox = rgba.getbbox()  # get bounding box of non-transparent pixels
+        if bbox:
+            rgba = rgba.crop(bbox)
+
         # Apply opacity to alpha channel
         r, g, b, a = rgba.split()
-        from PIL import ImageEnhance
         a = ImageEnhance.Brightness(a).enhance(SEAL_OPACITY)
         rgba.putalpha(a)
         rgba.save(tmp_seal, format="PNG")
