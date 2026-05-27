@@ -326,27 +326,29 @@ class Worker(QThread):
         rgba = seal_img.convert("RGBA")
 
         # Auto-crop seal image — removes black, white, or transparent borders
-        from PIL import ImageEnhance
-        import numpy as _np
-        _arr = _np.array(rgba)
-        _rgb = _arr[:,:,:3].astype(int)
-        # Detect background: sample corner pixels to find bg color
-        _corners = [_rgb[0,0], _rgb[0,-1], _rgb[-1,0], _rgb[-1,-1]]
-        _bg = _np.mean(_corners, axis=0)  # average corner color = background
-        # Find pixels that differ from background by more than threshold
-        _diff = _np.abs(_rgb - _bg).sum(axis=2)
-        _mask = _diff > 20
-        _rows = _np.any(_mask, axis=1)
-        _cols = _np.any(_mask, axis=0)
-        if _rows.any() and _cols.any():
-            _rmin, _rmax = _np.where(_rows)[0][[0, -1]]
-            _cmin, _cmax = _np.where(_cols)[0][[0, -1]]
+        # Uses only Pillow (no numpy needed)
+        from PIL import ImageEnhance, ImageChops
+        # Detect background color from corners
+        _px = rgba.load()
+        _w, _h = rgba.size
+        _corners = [_px[0,0][:3], _px[_w-1,0][:3], _px[0,_h-1][:3], _px[_w-1,_h-1][:3]]
+        _bg_r = sum(c[0] for c in _corners) // 4
+        _bg_g = sum(c[1] for c in _corners) // 4
+        _bg_b = sum(c[2] for c in _corners) // 4
+        # Create background image and find difference
+        _bg_img = Image.new("RGB", (_w, _h), (_bg_r, _bg_g, _bg_b))
+        _diff = ImageChops.difference(rgba.convert("RGB"), _bg_img)
+        # Get bounding box of non-background content
+        _bbox = _diff.point(lambda x: 255 if x > 20 else 0).convert("L").getbbox()
+        if _bbox:
             _pad = 4
-            _rmin = max(0, _rmin - _pad)
-            _rmax = min(rgba.height - 1, _rmax + _pad)
-            _cmin = max(0, _cmin - _pad)
-            _cmax = min(rgba.width - 1, _cmax + _pad)
-            rgba = rgba.crop((_cmin, _rmin, _cmax + 1, _rmax + 1))
+            _bbox = (
+                max(0, _bbox[0] - _pad),
+                max(0, _bbox[1] - _pad),
+                min(_w, _bbox[2] + _pad),
+                min(_h, _bbox[3] + _pad)
+            )
+            rgba = rgba.crop(_bbox)
 
         # Apply opacity to alpha channel
         r, g, b, a = rgba.split()
