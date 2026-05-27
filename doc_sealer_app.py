@@ -142,14 +142,6 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 """
 
 
-# ── Poppler Path Helper ──────────────────────────────────────────────────────
-def get_poppler_path():
-    """Get poppler bin path when running as PyInstaller bundle."""
-    if getattr(sys, 'frozen', False):
-        return os.path.join(sys._MEIPASS, "poppler", "bin")
-    return None  # use system PATH in dev
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Drop Zone Widget
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -296,6 +288,7 @@ class Worker(QThread):
         img = Image.open(fp)
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
+        # Write to temp file - img2pdf is more reliable with file paths
         import tempfile as _tf, os as _os
         with _tf.NamedTemporaryFile(suffix=".png", delete=False) as tmp_img:
             tmp_img_path = tmp_img.name
@@ -311,14 +304,17 @@ class Worker(QThread):
         buf = io.BytesIO()
         c = rl_canvas.Canvas(buf, pagesize=(w_pt, h_pt))
 
-        seal_sz = max(300, min(500, int(min(w_pt, h_pt) * 0.50)))
+        # Seal size: ~12% of shortest page dimension, capped 60-120pt
+        seal_sz = max(60, min(120, int(min(w_pt, h_pt) * 0.20)))
         mgn     = SEAL_MARGIN_PT
         x       = w_pt  - mgn - seal_sz
         y       = mgn
 
+        # Save seal PIL image to temp PNG for reportlab
         tmp_seal = io.BytesIO()
         rgba = seal_img.convert("RGBA")
 
+        # Apply opacity to alpha channel
         r, g, b, a = rgba.split()
         from PIL import ImageEnhance
         a = ImageEnhance.Brightness(a).enhance(SEAL_OPACITY)
@@ -388,13 +384,11 @@ class Worker(QThread):
                 # Step 4 – render → TIFF under 5 MB
                 dpi = RENDER_DPI_START
                 out = Path(self.output_path)
-                poppler = get_poppler_path()  # ← FIXED
 
                 while dpi >= RENDER_DPI_MIN:
                     self.progress.emit(
                         65, f"Rendering TIFF at {dpi} DPI…")
-                    pages_img = convert_from_path(
-                        str(sealed), dpi=dpi, poppler_path=poppler)  # ← FIXED
+                    pages_img = convert_from_path(str(sealed), dpi=dpi)
                     rgb_pages = [p.convert("RGB") for p in pages_img]
 
                     self.progress.emit(85, "Compressing TIFF…")
@@ -688,12 +682,13 @@ class MainWindow(QMainWindow):
     def _add_files(self, paths: list):
         existing = {self.file_list.item(i).data(Qt.ItemDataRole.UserRole)
                     for i in range(self.file_list.count())}
+        # Never add the seal image or the output file as a document page
         seal_path = self.seal_preview.seal_path
         for p in paths:
             if p == seal_path:
-                continue
+                continue  # skip seal image silently
             if self._output_path and Path(p).resolve() == Path(self._output_path).resolve():
-                continue
+                continue  # skip output file silently
             if p not in existing:
                 item = QListWidgetItem()
                 fp = Path(p)
@@ -730,6 +725,7 @@ class MainWindow(QMainWindow):
             self.out_path_lbl.setStyleSheet(
                 f"font-size: 12px; color: {C['text']};"
                 f"background: {C['surface']}; border-radius: 6px; padding: 6px 10px;")
+            # Remove output file from file list if it was already added
             out_resolved = Path(path).resolve()
             for i in range(self.file_list.count() - 1, -1, -1):
                 item_path = Path(self.file_list.item(i).data(Qt.ItemDataRole.UserRole)).resolve()
