@@ -50,6 +50,17 @@ try:
 except ImportError:
     PDF2IMAGE_OK = False
 
+# ── Bundled Poppler path (for PyInstaller .exe) ──────────────────────────────
+import sys as _sys, os as _os
+if getattr(_sys, 'frozen', False):
+    _poppler_path = _os.path.join(_sys._MEIPASS, 'poppler', 'bin')
+    if _os.path.exists(_poppler_path):
+        _os.environ['PATH'] = _poppler_path + _os.pathsep + _os.environ.get('PATH', '')
+    else:
+        _poppler_path = None
+else:
+    _poppler_path = None
+
 # ── Constants ───────────────────────────────────────────────────────────────
 MAX_TIFF_BYTES   = 5 * 1024 * 1024
 RENDER_DPI_START = 150
@@ -388,7 +399,7 @@ class Worker(QThread):
                 while dpi >= RENDER_DPI_MIN:
                     self.progress.emit(
                         65, f"Rendering TIFF at {dpi} DPI…")
-                    pages_img = convert_from_path(str(sealed), dpi=dpi)
+                    pages_img = convert_from_path(str(sealed), dpi=dpi, poppler_path=_poppler_path)
                     rgb_pages = [p.convert("RGB") for p in pages_img]
 
                     self.progress.emit(85, "Compressing TIFF…")
